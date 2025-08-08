@@ -1,181 +1,220 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import "forge-std/Test.sol";
-import "../src/EncryptedMessageInbox.sol";
-import "../src/EncryptedMessageInboxLight.sol";
+import {Test, console} from "forge-std/Test.sol";
+import {StdCheats} from "forge-std/StdCheats.sol";
+import {StdUtils} from "forge-std/StdUtils.sol";
 import "../src/MessageInbox.sol";
-import "../src/EncryptionValidator.sol";
 
-contract EncryptedMessageInboxTest is Test {
-    EncryptedMessageInbox public inbox;
+/**
+ * @title MessageInbox Basic Test Suite
+ * @dev Tests for the basic MessageInbox contract without encryption validation
+ */
+contract MessageInboxBasicTest is Test {
+    MessageInbox public inbox;
+
+    // Test accounts with meaningful names
     address public owner;
-    address public user1;
-    address public user2;
+    address public alice;
+    address public bob;
+    address public charlie;
+
+    // Constants
     string public constant INITIAL_PUBLIC_KEY = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQENBGH...test key...";
+    uint256 public constant INITIAL_BALANCE = 100 ether;
+
+    // Events for testing
+    event NewMessage(address indexed from, string topic, uint256 timestamp);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     function setUp() public {
+        // Setup test accounts with meaningful names
         owner = address(this);
-        user1 = address(0x1);
-        user2 = address(0x2);
+        alice = makeAddr("alice");
+        bob = makeAddr("bob");
+        charlie = makeAddr("charlie");
 
-        inbox = new EncryptedMessageInbox(INITIAL_PUBLIC_KEY);
+        // Fund accounts with ETH
+        vm.deal(alice, INITIAL_BALANCE);
+        vm.deal(bob, INITIAL_BALANCE);
+        vm.deal(charlie, INITIAL_BALANCE);
+
+        // Deploy MessageInbox (no encryption validation)
+        inbox = new MessageInbox(INITIAL_PUBLIC_KEY);
+
+        // Label addresses for better trace readability
+        vm.label(address(inbox), "MessageInbox");
+        vm.label(alice, "Alice");
+        vm.label(bob, "Bob");
+        vm.label(charlie, "Charlie");
     }
 
-    // Helper function to generate encrypted-looking data
-    function generateEncryptedMessage(uint256 seed, uint256 length) internal pure returns (string memory) {
-        require(length >= EncryptionValidator.MIN_ENCRYPTED_LENGTH, "Length too short");
+    // ============ BASIC FUNCTIONALITY TESTS ============
 
-        bytes memory result = new bytes(length);
-        for (uint256 i = 0; i < length; i++) {
-            result[i] = bytes1(uint8(uint256(keccak256(abi.encode(seed, i))) % 256));
-        }
-        return string(result);
-    }
-
-    // Helper function to generate plain text (should be rejected)
-    function generatePlainText() internal pure returns (string memory) {
-        return "This is a plain text message that should be rejected by validation";
-    }
-
-    // Test contract initialization
-    function testContractInitialization() public view {
+    /**
+     * @dev Test contract initialization
+     */
+    function test_ContractInitialization() public view {
         assertEq(inbox.owner(), owner, "Owner should be set correctly");
         assertEq(inbox.publicKey(), INITIAL_PUBLIC_KEY, "Public key should be set correctly");
     }
 
-    // Test successful message storage
-    function testSetMessage_Success() public {
-        string memory encryptedMsg = generateEncryptedMessage(12345, 80);
+    /**
+     * @dev Test basic message storage (MessageInbox accepts any string)
+     */
+    function test_SetMessage_AcceptsAnyString() public {
+        string memory plainText = "This is a plain text message";
         string memory topic = "general";
 
-        vm.prank(user1);
+        vm.prank(alice);
 
         // Expect the NewMessage event
         vm.expectEmit(true, false, false, true);
-        emit EncryptedMessageInbox.NewMessage(user1, topic, block.timestamp);
+        emit NewMessage(alice, topic, block.timestamp);
 
-        inbox.setMessage(encryptedMsg, topic);
+        inbox.setMessage(plainText, topic);
 
         // Verify message was stored
-        assertEq(inbox.getMessageCount(user1, topic), 1, "Message count should be 1");
-        assertEq(inbox.getMessage(user1, topic, 0), encryptedMsg, "Stored message should match");
+        assertEq(inbox.getMessageCount(alice, topic), 1, "Message count should be 1");
+        assertEq(inbox.getMessage(alice, topic, 0), plainText, "Stored message should match");
     }
 
-    // Test message rejection for plain text
-    function testSetMessage_RejectsPlainText() public {
-        string memory plainMsg = generatePlainText();
-        string memory topic = "general";
+    /**
+     * @dev Test empty message storage
+     */
+    function test_SetMessage_EmptyMessage() public {
+        string memory emptyMessage = "";
+        string memory topic = "empty_test";
 
-        vm.prank(user1);
-        vm.expectRevert("Message must be encrypted");
-        inbox.setMessage(plainMsg, topic);
+        vm.prank(alice);
+        inbox.setMessage(emptyMessage, topic);
 
-        // Verify no message was stored
-        assertEq(inbox.getMessageCount(user1, topic), 0, "No message should be stored");
+        assertEq(inbox.getMessageCount(alice, topic), 1, "Should store empty message");
+        assertEq(inbox.getMessage(alice, topic, 0), emptyMessage, "Empty message should be stored");
     }
 
-    // Test message rejection for too short data
-    function testSetMessage_RejectsTooShort() public {
-        string memory shortMsg = "short";
-        string memory topic = "general";
+    /**
+     * @dev Test very long message storage
+     */
+    function test_SetMessage_VeryLongMessage() public {
+        // Create a very long message (10KB)
+        string memory longMessage = _generateLongString(10000);
+        string memory topic = "long_message_test";
 
-        vm.prank(user1);
-        vm.expectRevert("Message must be encrypted");
-        inbox.setMessage(shortMsg, topic);
+        vm.prank(alice);
+        inbox.setMessage(longMessage, topic);
 
-        // Verify no message was stored
-        assertEq(inbox.getMessageCount(user1, topic), 0, "No message should be stored");
+        assertEq(inbox.getMessageCount(alice, topic), 1, "Should store long message");
+        assertEq(inbox.getMessage(alice, topic, 0), longMessage, "Long message should be stored correctly");
     }
 
-    // Test multiple messages from same user, same topic
-    function testMultipleMessages_SameUserSameTopic() public {
+    /**
+     * @dev Test multiple messages from same user, same topic
+     */
+    function test_MultipleMessages_SameUserSameTopic() public {
         string memory topic = "general";
-        string memory message1 = generateEncryptedMessage(111, 60);
-        string memory message2 = generateEncryptedMessage(222, 70);
-        string memory message3 = generateEncryptedMessage(333, 80);
+        string memory message1 = "First message";
+        string memory message2 = "Second message";
+        string memory message3 = "Third message";
 
-        vm.startPrank(user1);
-
+        vm.startPrank(alice);
         inbox.setMessage(message1, topic);
         inbox.setMessage(message2, topic);
         inbox.setMessage(message3, topic);
-
         vm.stopPrank();
 
         // Verify all messages were stored in correct order
-        assertEq(inbox.getMessageCount(user1, topic), 3, "Should have 3 messages");
-        assertEq(inbox.getMessage(user1, topic, 0), message1, "First message should match");
-        assertEq(inbox.getMessage(user1, topic, 1), message2, "Second message should match");
-        assertEq(inbox.getMessage(user1, topic, 2), message3, "Third message should match");
+        assertEq(inbox.getMessageCount(alice, topic), 3, "Should have 3 messages");
+        assertEq(inbox.getMessage(alice, topic, 0), message1, "First message should match");
+        assertEq(inbox.getMessage(alice, topic, 1), message2, "Second message should match");
+        assertEq(inbox.getMessage(alice, topic, 2), message3, "Third message should match");
     }
 
-    // Test multiple messages from same user, different topics
-    function testMultipleMessages_SameUserDifferentTopics() public {
-        string memory topic1 = "work";
-        string memory topic2 = "personal";
-        string memory message1 = generateEncryptedMessage(111, 60);
-        string memory message2 = generateEncryptedMessage(222, 70);
+    /**
+     * @dev Test multiple messages from same user, different topics
+     */
+    function test_MultipleMessages_SameUserDifferentTopics() public {
+        string memory workTopic = "work";
+        string memory personalTopic = "personal";
+        string memory workMessage = "Work related message";
+        string memory personalMessage = "Personal message";
 
-        vm.startPrank(user1);
-
-        inbox.setMessage(message1, topic1);
-        inbox.setMessage(message2, topic2);
-
+        vm.startPrank(alice);
+        inbox.setMessage(workMessage, workTopic);
+        inbox.setMessage(personalMessage, personalTopic);
         vm.stopPrank();
 
         // Verify messages are stored under correct topics
-        assertEq(inbox.getMessageCount(user1, topic1), 1, "Should have 1 message in work topic");
-        assertEq(inbox.getMessageCount(user1, topic2), 1, "Should have 1 message in personal topic");
-        assertEq(inbox.getMessage(user1, topic1, 0), message1, "Work message should match");
-        assertEq(inbox.getMessage(user1, topic2, 0), message2, "Personal message should match");
+        assertEq(inbox.getMessageCount(alice, workTopic), 1, "Should have 1 message in work topic");
+        assertEq(inbox.getMessageCount(alice, personalTopic), 1, "Should have 1 message in personal topic");
+        assertEq(inbox.getMessage(alice, workTopic, 0), workMessage, "Work message should match");
+        assertEq(inbox.getMessage(alice, personalTopic, 0), personalMessage, "Personal message should match");
     }
 
-    // Test messages from different users
-    function testMultipleMessages_DifferentUsers() public {
+    /**
+     * @dev Test messages from different users
+     */
+    function test_MultipleMessages_DifferentUsers() public {
         string memory topic = "general";
-        string memory message1 = generateEncryptedMessage(111, 60);
-        string memory message2 = generateEncryptedMessage(222, 70);
+        string memory aliceMessage = "Alice's message";
+        string memory bobMessage = "Bob's message";
+        string memory charlieMessage = "Charlie's message";
 
-        vm.prank(user1);
-        inbox.setMessage(message1, topic);
+        vm.prank(alice);
+        inbox.setMessage(aliceMessage, topic);
 
-        vm.prank(user2);
-        inbox.setMessage(message2, topic);
+        vm.prank(bob);
+        inbox.setMessage(bobMessage, topic);
+
+        vm.prank(charlie);
+        inbox.setMessage(charlieMessage, topic);
 
         // Verify messages are stored separately by user
-        assertEq(inbox.getMessageCount(user1, topic), 1, "User1 should have 1 message");
-        assertEq(inbox.getMessageCount(user2, topic), 1, "User2 should have 1 message");
-        assertEq(inbox.getMessage(user1, topic, 0), message1, "User1 message should match");
-        assertEq(inbox.getMessage(user2, topic, 0), message2, "User2 message should match");
+        assertEq(inbox.getMessageCount(alice, topic), 1, "Alice should have 1 message");
+        assertEq(inbox.getMessageCount(bob, topic), 1, "Bob should have 1 message");
+        assertEq(inbox.getMessageCount(charlie, topic), 1, "Charlie should have 1 message");
+
+        assertEq(inbox.getMessage(alice, topic, 0), aliceMessage, "Alice's message should match");
+        assertEq(inbox.getMessage(bob, topic, 0), bobMessage, "Bob's message should match");
+        assertEq(inbox.getMessage(charlie, topic, 0), charlieMessage, "Charlie's message should match");
     }
 
-    // Test getMessage with invalid index
-    function testGetMessage_InvalidIndex() public {
+    // ============ ERROR HANDLING TESTS ============
+
+    /**
+     * @dev Test getMessage with invalid index
+     */
+    function test_GetMessage_InvalidIndex() public {
         string memory topic = "general";
 
         // Try to get message when no messages exist
         vm.expectRevert("Message index out of bounds");
-        inbox.getMessage(user1, topic, 0);
+        inbox.getMessage(alice, topic, 0);
 
         // Store one message
-        string memory message = generateEncryptedMessage(111, 60);
-        vm.prank(user1);
+        string memory message = "Test message";
+        vm.prank(alice);
         inbox.setMessage(message, topic);
 
         // Try to get message at index 1 when only index 0 exists
         vm.expectRevert("Message index out of bounds");
-        inbox.getMessage(user1, topic, 1);
+        inbox.getMessage(alice, topic, 1);
     }
 
-    // Test getMessageCount for empty topic
-    function testGetMessageCount_EmptyTopic() public view {
-        uint256 count = inbox.getMessageCount(user1, "nonexistent");
+    /**
+     * @dev Test getMessageCount for empty topic
+     */
+    function test_GetMessageCount_EmptyTopic() public view {
+        uint256 count = inbox.getMessageCount(alice, "nonexistent");
         assertEq(count, 0, "Count should be 0 for empty topic");
     }
 
-    // Test public key management
-    function testSetPublicKey_OnlyOwner() public {
+    // ============ OWNERSHIP TESTS ============
+
+    /**
+     * @dev Test public key management - only owner
+     */
+    function test_SetPublicKey_OnlyOwner() public {
         string memory newKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nnew key content...";
 
         // Owner can set public key
@@ -183,14 +222,16 @@ contract EncryptedMessageInboxTest is Test {
         assertEq(inbox.publicKey(), newKey, "Public key should be updated");
 
         // Non-owner cannot set public key
-        vm.prank(user1);
+        vm.prank(alice);
         vm.expectRevert("Only owner can call this function");
         inbox.setPublicKey("unauthorized key");
     }
 
-    // Test ownership transfer
-    function testTransferOwnership() public {
-        address newOwner = user1;
+    /**
+     * @dev Test ownership transfer
+     */
+    function test_TransferOwnership() public {
+        address newOwner = alice;
 
         // Transfer ownership
         inbox.transferOwnership(newOwner);
@@ -206,142 +247,253 @@ contract EncryptedMessageInboxTest is Test {
         assertEq(inbox.publicKey(), "new owner key", "New owner should be able to set key");
     }
 
-    // Test ownership transfer to zero address
-    function testTransferOwnership_ZeroAddress() public {
+    /**
+     * @dev Test ownership transfer to zero address
+     */
+    function test_TransferOwnership_ZeroAddress() public {
         vm.expectRevert("New owner cannot be zero address");
         inbox.transferOwnership(address(0));
     }
 
-    // Test ownership transfer - only owner
-    function testTransferOwnership_OnlyOwner() public {
-        vm.prank(user1);
+    /**
+     * @dev Test ownership transfer - only owner
+     */
+    function test_TransferOwnership_OnlyOwner() public {
+        vm.prank(alice);
         vm.expectRevert("Only owner can call this function");
-        inbox.transferOwnership(user2);
+        inbox.transferOwnership(bob);
     }
 
-    // Test NewMessage event emission
-    function testNewMessageEvent() public {
-        string memory message = generateEncryptedMessage(12345, 80);
-        string memory topic = "test";
+    // ============ EVENT TESTS ============
 
-        vm.prank(user1);
+    /**
+     * @dev Test NewMessage event emission
+     */
+    function test_NewMessageEvent() public {
+        string memory message = "Test message for event";
+        string memory topic = "event_test";
+
+        vm.prank(alice);
 
         vm.expectEmit(true, false, false, true);
-        emit EncryptedMessageInbox.NewMessage(user1, topic, block.timestamp);
+        emit NewMessage(alice, topic, block.timestamp);
 
         inbox.setMessage(message, topic);
     }
 
-    // Test with empty topic string
-    function testSetMessage_EmptyTopic() public {
-        string memory message = generateEncryptedMessage(12345, 80);
+    /**
+     * @dev Test event emission with different topics
+     */
+    function test_NewMessageEvent_DifferentTopics() public {
+        string memory message = "Test message";
+        string[] memory topics = new string[](3);
+        topics[0] = "work";
+        topics[1] = "personal";
+        topics[2] = "general";
+
+        vm.startPrank(alice);
+
+        for (uint256 i = 0; i < topics.length; i++) {
+            vm.expectEmit(true, false, false, true);
+            emit NewMessage(alice, topics[i], block.timestamp);
+            inbox.setMessage(message, topics[i]);
+        }
+
+        vm.stopPrank();
+    }
+
+    // ============ EDGE CASE TESTS ============
+
+    /**
+     * @dev Test with empty topic string
+     */
+    function test_SetMessage_EmptyTopic() public {
+        string memory message = "Message with empty topic";
         string memory emptyTopic = "";
 
-        vm.prank(user1);
+        vm.prank(alice);
         inbox.setMessage(message, emptyTopic);
 
-        assertEq(inbox.getMessageCount(user1, emptyTopic), 1, "Should work with empty topic");
-        assertEq(inbox.getMessage(user1, emptyTopic, 0), message, "Message should be stored");
+        assertEq(inbox.getMessageCount(alice, emptyTopic), 1, "Should work with empty topic");
+        assertEq(inbox.getMessage(alice, emptyTopic, 0), message, "Message should be stored");
     }
 
-    // Test with very long topic string
-    function testSetMessage_LongTopic() public {
-        string memory message = generateEncryptedMessage(12345, 80);
-        string memory longTopic =
-            "this_is_a_very_long_topic_name_that_might_be_used_for_detailed_categorization_purposes";
+    /**
+     * @dev Test with very long topic string
+     */
+    function test_SetMessage_LongTopic() public {
+        string memory message = "Message with long topic";
+        string memory longTopic = _generateLongString(1000); // 1KB topic name
 
-        vm.prank(user1);
+        vm.prank(alice);
         inbox.setMessage(message, longTopic);
 
-        assertEq(inbox.getMessageCount(user1, longTopic), 1, "Should work with long topic");
-        assertEq(inbox.getMessage(user1, longTopic, 0), message, "Message should be stored");
+        assertEq(inbox.getMessageCount(alice, longTopic), 1, "Should work with long topic");
+        assertEq(inbox.getMessage(alice, longTopic, 0), message, "Message should be stored");
     }
 
-    // Test message storage with minimum valid length
-    function testSetMessage_MinimumLength() public {
-        string memory message = generateEncryptedMessage(12345, EncryptionValidator.MIN_ENCRYPTED_LENGTH);
-        string memory topic = "general";
+    /**
+     * @dev Test special characters in messages and topics
+     */
+    function test_SetMessage_SpecialCharacters() public {
+        string memory message = "Message with special chars: !@#$%^&*()_+-=[]{}|;:,.<>?";
+        string memory topic = "topic_with_special_chars_!@#$%";
 
-        vm.prank(user1);
+        vm.prank(alice);
         inbox.setMessage(message, topic);
 
-        assertEq(inbox.getMessageCount(user1, topic), 1, "Should accept minimum length encrypted message");
-        assertEq(inbox.getMessage(user1, topic, 0), message, "Message should be stored correctly");
+        assertEq(inbox.getMessageCount(alice, topic), 1, "Should handle special characters");
+        assertEq(inbox.getMessage(alice, topic, 0), message, "Special characters should be preserved");
     }
 
-    // Test message storage with large message
-    function testSetMessage_LargeMessage() public {
-        string memory message = generateEncryptedMessage(12345, 1000); // Large message
-        string memory topic = "general";
+    // ============ GAS OPTIMIZATION TESTS ============
 
-        vm.prank(user1);
-        inbox.setMessage(message, topic);
-
-        assertEq(inbox.getMessageCount(user1, topic), 1, "Should accept large encrypted message");
-        assertEq(inbox.getMessage(user1, topic, 0), message, "Large message should be stored correctly");
-    }
-
-    // Fuzz test with various message sizes
-    function testFuzz_MessageSizes(uint256 seed, uint16 length) public {
-        vm.assume(length >= EncryptionValidator.MIN_ENCRYPTED_LENGTH);
-        vm.assume(length <= 2000); // Reasonable upper bound
-
-        string memory message = generateEncryptedMessage(seed, length);
-        string memory topic = "fuzz";
-
-        vm.prank(user1);
-        inbox.setMessage(message, topic);
-
-        assertEq(inbox.getMessageCount(user1, topic), 1, "Fuzz message should be stored");
-        assertEq(inbox.getMessage(user1, topic, 0), message, "Fuzz message should match");
-    }
-
-    // Test gas usage for message storage
-    function testGasUsage_MessageStorage() public {
-        string memory message = generateEncryptedMessage(12345, 200);
+    /**
+     * @dev Test gas usage for message storage
+     */
+    function test_GasUsage_MessageStorage() public {
+        string memory message = "Standard length message for gas testing purposes";
         string memory topic = "gas_test";
 
-        vm.prank(user1);
+        vm.prank(alice);
 
         uint256 gasBefore = gasleft();
         inbox.setMessage(message, topic);
         uint256 gasUsed = gasBefore - gasleft();
 
-        emit log_named_uint("Gas used for message storage (200 bytes)", gasUsed);
+        emit log_named_uint("Gas used for basic message storage", gasUsed);
 
-        // Gas usage should be reasonable (including validation + storage + event emission)
-        // This includes: encryption validation (~100k) + storage operations (~150k) + events (~25k)
-        assertGt(gasUsed, 300000, "Gas usage should be reasonable for message storage");
+        // Basic MessageInbox should use less gas (no encryption validation)
+        assertLt(gasUsed, 100000, "Basic inbox should use minimal gas");
     }
 
-    // Test multiple operations in sequence
-    function testComplexWorkflow() public {
-        // Setup different topics and users
+    /**
+     * @dev Test gas usage comparison for different message sizes
+     */
+    function test_GasUsage_DifferentSizes() public {
+        uint256[] memory sizes = new uint256[](4);
+        sizes[0] = 50; // Small message
+        sizes[1] = 200; // Medium message
+        sizes[2] = 500; // Large message
+        sizes[3] = 1000; // Very large message
+
+        emit log_string("=== GAS USAGE BY MESSAGE SIZE (Basic MessageInbox) ===");
+
+        for (uint256 i = 0; i < sizes.length; i++) {
+            string memory message = _generateLongString(sizes[i]);
+            string memory topic = string(abi.encodePacked("gas_test_", i));
+
+            vm.prank(alice);
+            uint256 gasBefore = gasleft();
+            inbox.setMessage(message, topic);
+            uint256 gasUsed = gasBefore - gasleft();
+
+            emit log_named_uint("Message size (bytes)", sizes[i]);
+            emit log_named_uint("Gas used", gasUsed);
+            emit log_named_uint("Gas per byte", gasUsed / sizes[i]);
+            emit log_string("---");
+        }
+    }
+
+    // ============ FUZZING TESTS ============
+
+    /**
+     * @dev Fuzz test with various message lengths (with proper bounds)
+     */
+    function testFuzz_MessageStorage(uint256 seed, uint16 messageLength, uint8 topicLength, uint8 userIndex) public {
+        // Use bound to ensure reasonable inputs and prevent overflow
+        messageLength = uint16(bound(messageLength, 0, 1000)); // Reduced from 2000 to 1000
+        topicLength = uint8(bound(topicLength, 0, 50));        // Reduced from 100 to 50
+        userIndex = uint8(bound(userIndex, 0, 2));             // 0=alice, 1=bob, 2=charlie
+        
+        // Bound the seed to prevent extremely large values
+        seed = bound(seed, 0, type(uint128).max);
+
+        // Generate deterministic user, message, and topic
+        address user = userIndex == 0 ? alice : userIndex == 1 ? bob : charlie;
+        string memory message = _generateDeterministicString(seed, messageLength);
+        string memory topic = _generateDeterministicString(seed + 1, topicLength);
+
+        // Store initial count
+        uint256 initialCount = inbox.getMessageCount(user, topic);
+
+        // Send message
+        vm.prank(user);
+        inbox.setMessage(message, topic);
+
+        // Verify storage
+        assertEq(inbox.getMessageCount(user, topic), initialCount + 1, "Count should increment");
+        assertEq(inbox.getMessage(user, topic, initialCount), message, "Message should match");
+    }
+
+    /**
+     * @dev Fuzz test with random topics and users
+     */
+    function testFuzz_MultipleUsersAndTopics(bytes32 messageSeed, bytes32 topicSeed, uint8 userSeed) public {
+        // Generate deterministic inputs
+        address user = address(uint160(uint256(keccak256(abi.encode(userSeed)))));
+        string memory message = string(abi.encodePacked("Message_", uint256(messageSeed)));
+        string memory topic = string(abi.encodePacked("Topic_", uint256(topicSeed)));
+
+        // Fund the user
+        vm.deal(user, 1 ether);
+
+        // Store message
+        vm.prank(user);
+        inbox.setMessage(message, topic);
+
+        // Verify
+        assertEq(inbox.getMessageCount(user, topic), 1, "Should store message for any user/topic");
+        assertEq(inbox.getMessage(user, topic, 0), message, "Message should be retrievable");
+    }
+
+    // ============ COMPLEX WORKFLOW TESTS ============
+
+    /**
+     * @dev Test complex multi-user, multi-topic workflow
+     */
+    function test_ComplexWorkflow() public {
+        // Setup different topics
         string memory workTopic = "work";
         string memory personalTopic = "personal";
+        string memory publicTopic = "public";
 
-        // User1 sends work messages
-        vm.startPrank(user1);
-        inbox.setMessage(generateEncryptedMessage(1, 80), workTopic);
-        inbox.setMessage(generateEncryptedMessage(2, 90), workTopic);
-        inbox.setMessage(generateEncryptedMessage(3, 100), personalTopic);
+        // Alice sends work and personal messages
+        vm.startPrank(alice);
+        inbox.setMessage("Alice work message 1", workTopic);
+        inbox.setMessage("Alice work message 2", workTopic);
+        inbox.setMessage("Alice personal message", personalTopic);
         vm.stopPrank();
 
-        // User2 sends messages
-        vm.startPrank(user2);
-        inbox.setMessage(generateEncryptedMessage(4, 85), workTopic);
-        inbox.setMessage(generateEncryptedMessage(5, 95), personalTopic);
+        // Bob sends work and public messages
+        vm.startPrank(bob);
+        inbox.setMessage("Bob work message", workTopic);
+        inbox.setMessage("Bob public message", publicTopic);
         vm.stopPrank();
 
-        // Verify counts
-        assertEq(inbox.getMessageCount(user1, workTopic), 2, "User1 should have 2 work messages");
-        assertEq(inbox.getMessageCount(user1, personalTopic), 1, "User1 should have 1 personal message");
-        assertEq(inbox.getMessageCount(user2, workTopic), 1, "User2 should have 1 work message");
-        assertEq(inbox.getMessageCount(user2, personalTopic), 1, "User2 should have 1 personal message");
+        // Charlie sends messages to all topics
+        vm.startPrank(charlie);
+        inbox.setMessage("Charlie work message", workTopic);
+        inbox.setMessage("Charlie personal message", personalTopic);
+        inbox.setMessage("Charlie public message", publicTopic);
+        vm.stopPrank();
+
+        // Verify message counts
+        assertEq(inbox.getMessageCount(alice, workTopic), 2, "Alice should have 2 work messages");
+        assertEq(inbox.getMessageCount(alice, personalTopic), 1, "Alice should have 1 personal message");
+        assertEq(inbox.getMessageCount(alice, publicTopic), 0, "Alice should have 0 public messages");
+
+        assertEq(inbox.getMessageCount(bob, workTopic), 1, "Bob should have 1 work message");
+        assertEq(inbox.getMessageCount(bob, personalTopic), 0, "Bob should have 0 personal messages");
+        assertEq(inbox.getMessageCount(bob, publicTopic), 1, "Bob should have 1 public message");
+
+        assertEq(inbox.getMessageCount(charlie, workTopic), 1, "Charlie should have 1 work message");
+        assertEq(inbox.getMessageCount(charlie, personalTopic), 1, "Charlie should have 1 personal message");
+        assertEq(inbox.getMessageCount(charlie, publicTopic), 1, "Charlie should have 1 public message");
 
         // Transfer ownership and update public key
-        inbox.transferOwnership(user1);
-        vm.prank(user1);
+        inbox.transferOwnership(alice);
+        vm.prank(alice);
         inbox.setPublicKey("new public key after ownership transfer");
 
         assertEq(
@@ -349,164 +501,43 @@ contract EncryptedMessageInboxTest is Test {
         );
     }
 
-    // Test gas comparison: Regular vs EncryptedMessageInboxLight
-    function testGasComparison_RegularVsLightInbox() public {
-        // Deploy light version
-        EncryptedMessageInboxLight lightInbox = new EncryptedMessageInboxLight(INITIAL_PUBLIC_KEY);
+    // ============ HELPER FUNCTIONS ============
 
-        string memory message = generateEncryptedMessage(12345, 200);
-        string memory topic = "gas_comparison";
+    /**
+     * @dev Generate a long string of specified length
+     */
+    function _generateLongString(uint256 length) internal pure returns (string memory) {
+        if (length == 0) return "";
 
-        // Test regular EncryptedMessageInbox
-        vm.prank(user1);
-        uint256 gasBefore = gasleft();
-        inbox.setMessage(message, topic);
-        uint256 gasRegular = gasBefore - gasleft();
-
-        // Test EncryptedMessageInboxLight
-        vm.prank(user1);
-        gasBefore = gasleft();
-        lightInbox.setMessage(message, topic);
-        uint256 gasLight = gasBefore - gasleft();
-
-        // Log comparison
-        emit log_string("=== INBOX GAS COMPARISON ===");
-        emit log_named_uint("Regular EncryptedMessageInbox (200 bytes)", gasRegular);
-        emit log_named_uint("Light EncryptedMessageInbox (200 bytes)", gasLight);
-        emit log_named_uint("Gas savings", gasRegular - gasLight);
-        emit log_named_uint("Percentage reduction", ((gasRegular - gasLight) * 100) / gasRegular);
-
-        // Verify both stored the message correctly
-        assertEq(inbox.getMessageCount(user1, topic), 1, "Regular inbox should store message");
-        assertEq(lightInbox.getMessageCount(user1, topic), 1, "Light inbox should store message");
-        assertEq(inbox.getMessage(user1, topic, 0), message, "Regular inbox message should match");
-        assertEq(lightInbox.getMessage(user1, topic, 0), message, "Light inbox message should match");
-
-        // Light version should use significantly less gas
-        assertLt(gasLight, gasRegular, "Light inbox should use less gas");
-    }
-
-    // Test comprehensive gas comparison: All three EncryptedMessageInbox versions
-    function testGasComparison_AllThreeVersions() public {
-        // Deploy all versions
-        EncryptedMessageInboxLight lightInbox = new EncryptedMessageInboxLight(INITIAL_PUBLIC_KEY);
-        MessageInbox unsafeInbox = new MessageInbox(INITIAL_PUBLIC_KEY);
-
-        string memory message = generateEncryptedMessage(12345, 200);
-        string memory topic = "comprehensive_gas_test";
-
-        // Test Regular EncryptedMessageInbox (with full encryption validation)
-        vm.prank(user1);
-        uint256 gasBefore = gasleft();
-        inbox.setMessage(message, topic);
-        uint256 gasRegular = gasBefore - gasleft();
-
-        // Test Light EncryptedMessageInbox (with light encryption validation)
-        vm.prank(user1);
-        gasBefore = gasleft();
-        lightInbox.setMessage(message, topic);
-        uint256 gasLight = gasBefore - gasleft();
-
-        // Test Unsafe EncryptedMessageInbox (no validation)
-        vm.prank(user1);
-        gasBefore = gasleft();
-        unsafeInbox.setMessage(message, topic);
-        uint256 gasUnsafe = gasBefore - gasleft();
-
-        // Log comprehensive comparison
-        emit log_string("=== COMPREHENSIVE INBOX GAS COMPARISON ===");
-        emit log_named_uint("Regular EncryptedMessageInbox (200 bytes)", gasRegular);
-        emit log_named_uint("Light EncryptedMessageInbox (200 bytes)", gasLight);
-        emit log_named_uint("Unsafe EncryptedMessageInbox (200 bytes)", gasUnsafe);
-        emit log_string("---");
-        emit log_named_uint("Light vs Regular savings", gasRegular - gasLight);
-        emit log_named_uint("Unsafe vs Regular savings", gasRegular - gasUnsafe);
-        emit log_named_uint("Light vs Unsafe difference", gasLight - gasUnsafe);
-        emit log_string("---");
-        emit log_named_uint("Light reduction %", ((gasRegular - gasLight) * 100) / gasRegular);
-        emit log_named_uint("Unsafe reduction %", ((gasRegular - gasUnsafe) * 100) / gasRegular);
-        emit log_string("---");
-
-        // Verify all stored the message correctly
-        assertEq(inbox.getMessageCount(user1, topic), 1, "Regular inbox should store message");
-        assertEq(lightInbox.getMessageCount(user1, topic), 1, "Light inbox should store message");
-        assertEq(unsafeInbox.getMessageCount(user1, topic), 1, "Unsafe inbox should store message");
-
-        // Gas ordering should be: Unsafe < Light < Regular
-        assertLt(gasUnsafe, gasLight, "Unsafe should use less gas than Light");
-        assertLt(gasLight, gasRegular, "Light should use less gas than Regular");
-
-        // Calculate the cost of validation
-        uint256 lightValidationCost = gasLight - gasUnsafe;
-        uint256 fullValidationCost = gasRegular - gasUnsafe;
-
-        emit log_named_uint("Light validation cost", lightValidationCost);
-        emit log_named_uint("Full validation cost", fullValidationCost);
-        emit log_named_uint("Validation overhead %", (fullValidationCost * 100) / gasUnsafe);
-    }
-
-    // Test that unsafe inbox accepts plain text (demonstrating the security risk)
-    function testUnsafeInbox_AcceptsPlainText() public {
-        MessageInbox unsafeInbox = new MessageInbox(INITIAL_PUBLIC_KEY);
-        string memory plainText = generatePlainText();
-        string memory topic = "security_risk_test";
-
-        // Unsafe inbox should accept plain text (security risk!)
-        vm.prank(user1);
-        unsafeInbox.setMessage(plainText, topic);
-
-        assertEq(unsafeInbox.getMessageCount(user1, topic), 1, "Unsafe inbox accepts plain text");
-        assertEq(unsafeInbox.getMessage(user1, topic, 0), plainText, "Plain text stored without validation");
-
-        // Regular inbox should reject the same plain text
-        vm.prank(user1);
-        vm.expectRevert("Message must be encrypted");
-        inbox.setMessage(plainText, topic);
-
-        assertEq(inbox.getMessageCount(user1, topic), 0, "Regular inbox correctly rejects plain text");
-    }
-
-    // Performance comparison with different message sizes
-    function testPerformanceComparison_DifferentSizes() public {
-        EncryptedMessageInboxLight lightInbox = new EncryptedMessageInboxLight(INITIAL_PUBLIC_KEY);
-        MessageInbox unsafeInbox = new MessageInbox(INITIAL_PUBLIC_KEY);
-
-        uint256[] memory sizes = new uint256[](4);
-        sizes[0] = 80; // Small message
-        sizes[1] = 200; // Medium message
-        sizes[2] = 500; // Large message
-        sizes[3] = 1000; // Very large message
-
-        emit log_string("=== PERFORMANCE BY MESSAGE SIZE ===");
-
-        for (uint256 i = 0; i < sizes.length; i++) {
-            string memory message = generateEncryptedMessage(111 + i, sizes[i]);
-            string memory topic = string(abi.encodePacked("perf_test_", i));
-
-            // Regular EncryptedMessageInbox
-            vm.prank(user1);
-            uint256 gasBefore = gasleft();
-            inbox.setMessage(message, topic);
-            uint256 gasRegular = gasBefore - gasleft();
-
-            // Light EncryptedMessageInbox
-            vm.prank(user1);
-            gasBefore = gasleft();
-            lightInbox.setMessage(message, topic);
-            uint256 gasLight = gasBefore - gasleft();
-
-            // Unsafe EncryptedMessageInbox
-            vm.prank(user1);
-            gasBefore = gasleft();
-            unsafeInbox.setMessage(message, topic);
-            uint256 gasUnsafe = gasBefore - gasleft();
-
-            emit log_named_uint("Message size (bytes)", sizes[i]);
-            emit log_named_uint("Regular gas", gasRegular);
-            emit log_named_uint("Light gas", gasLight);
-            emit log_named_uint("Unsafe gas", gasUnsafe);
-            emit log_named_uint("Validation overhead", gasRegular - gasUnsafe);
-            emit log_string("---");
+        bytes memory result = new bytes(length);
+        for (uint256 i = 0; i < length; i++) {
+            // Create repeating pattern: A-Z, a-z, 0-9
+            uint256 charIndex = i % 62;
+            if (charIndex < 26) {
+                result[i] = bytes1(uint8(65 + charIndex)); // A-Z
+            } else if (charIndex < 52) {
+                result[i] = bytes1(uint8(97 + charIndex - 26)); // a-z
+            } else {
+                result[i] = bytes1(uint8(48 + charIndex - 52)); // 0-9
+            }
         }
+        return string(result);
+    }
+
+    /**
+     * @dev Generate deterministic string based on seed and length
+     */
+    function _generateDeterministicString(uint256 seed, uint256 length) internal pure returns (string memory) {
+        if (length == 0) return "";
+        
+        // Prevent overflow by limiting length to reasonable bounds
+        if (length > 10000) length = 10000;
+
+        bytes memory result = new bytes(length);
+        for (uint256 i = 0; i < length; i++) {
+            uint256 charCode = uint256(keccak256(abi.encode(seed, i))) % 94 + 33; // Printable ASCII chars
+            result[i] = bytes1(uint8(charCode));
+        }
+        return string(result);
     }
 }

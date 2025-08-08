@@ -69,12 +69,18 @@ program
 program
   .command('encrypt')
   .description('Encrypt text using a public key')
-  .requiredOption('-p, --public-key <key>', 'Public key (base64)')
+  .option('-p, --public-key <key>', 'Public key (base64)')
   .requiredOption('-t, --text <text>', 'Text to encrypt')
   .option('-f, --public-key-file <file>', 'Read public key from file')
   .action(async (options) => {
     try {
       const sodium = await initSodium();
+      
+      // Validate that either public-key or public-key-file is provided
+      if (!options.publicKey && !options.publicKeyFile) {
+        console.error(chalk.red('❌ Error: Either --public-key or --public-key-file must be specified'));
+        process.exit(1);
+      }
       
       console.log(chalk.blue('🔒 Encrypting message...'));
       
@@ -125,12 +131,18 @@ program
 program
   .command('decrypt')
   .description('Decrypt text using a private key')
-  .requiredOption('-k, --private-key <key>', 'Private key (base64)')
+  .option('-k, --private-key <key>', 'Private key (base64)')
   .requiredOption('-t, --text <text>', 'Encrypted text to decrypt (base64)')
   .option('-f, --private-key-file <file>', 'Read private key from file')
   .action(async (options) => {
     try {
       const sodium = await initSodium();
+      
+      // Validate that either private-key or private-key-file is provided
+      if (!options.privateKey && !options.privateKeyFile) {
+        console.error(chalk.red('❌ Error: Either --private-key or --private-key-file must be specified'));
+        process.exit(1);
+      }
       
       console.log(chalk.blue('🔓 Decrypting message...'));
       
