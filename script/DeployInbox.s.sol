@@ -1,11 +1,11 @@
 // # Deploy qualquer versão do MessageInbox
-// 
+//
 // ## IMPORTANTE: Configure sua chave PGP primeiro!
 // ## Set PGP_PUBLIC_KEY environment variable or add to .env file
 //
 // ## Opções de CONTRACT_TYPE:
 // - "unsafe"     = MessageInbox (sem validação)
-// - "light"      = EncryptedMessageInboxLight (validação leve)  
+// - "light"      = EncryptedMessageInboxLight (validação leve)
 // - "full"       = EncryptedMessageInbox (validação completa)
 //
 // ## Exemplos de uso:
@@ -29,7 +29,8 @@ import {EncryptedMessageInboxLight} from "../src/EncryptedMessageInboxLight.sol"
 
 contract DeployInboxScript is Script {
     // Fallback public key only used if PGP_PUBLIC_KEY env var is not set
-    string public constant FALLBACK_PUBLIC_KEY = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQENBGH...fallback_test_key...-----END PGP PUBLIC KEY BLOCK-----";
+    string public constant FALLBACK_PUBLIC_KEY =
+        "-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQENBGH...fallback_test_key...-----END PGP PUBLIC KEY BLOCK-----";
 
     function setUp() public {}
 
@@ -66,13 +67,11 @@ contract DeployInboxScript is Script {
             deployedContract = address(inbox);
             console.log("MessageInbox deployed at:", deployedContract);
             console.log("Security: NO VALIDATION (fastest, least secure)");
-            
         } else if (keccak256(abi.encodePacked(contractType)) == keccak256("light")) {
             EncryptedMessageInboxLight inbox = new EncryptedMessageInboxLight(publicKey);
             deployedContract = address(inbox);
             console.log("EncryptedMessageInboxLight deployed at:", deployedContract);
             console.log("Security: LIGHT VALIDATION (balanced)");
-            
         } else {
             // Default to full validation
             EncryptedMessageInbox inbox = new EncryptedMessageInbox(publicKey);

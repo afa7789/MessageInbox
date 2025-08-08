@@ -11,11 +11,11 @@ import "./EncryptionValidator.sol";
  */
 contract EncryptedMessageInbox {
     using EncryptionValidator for string;
-    
+
     /// @notice Public key used for encrypting messages sent to this inbox
     /// @dev This key should be in PGP format or similar
     string public publicKey;
-    
+
     /// @notice Address of the contract owner who can manage the public key
     address public owner;
 
@@ -28,14 +28,14 @@ contract EncryptedMessageInbox {
     /// @param topic Topic/category of the message
     /// @param timestamp Block timestamp when message was stored
     event NewMessage(address indexed from, string topic, uint256 timestamp);
-    
+
     /// @notice Emitted when a message is rejected due to validation failure
     /// @param from Address of the message sender
     /// @param topic Topic/category of the attempted message
     /// @param timestamp Block timestamp when rejection occurred
     /// @param reason Human-readable reason for rejection
     event MessageRejected(address indexed from, string topic, uint256 timestamp, string reason);
-    
+
     /**
      * @notice Constructor to initialize the contract with a public key
      * @dev Sets the deployer as the owner and stores the initial public key
@@ -45,7 +45,7 @@ contract EncryptedMessageInbox {
         publicKey = _publicKey;
         owner = msg.sender;
     }
-    
+
     /**
      * @dev Modifier to restrict function access to contract owner only
      * @notice Reverts if caller is not the owner
@@ -64,7 +64,7 @@ contract EncryptedMessageInbox {
      */
     function setMessage(string calldata newMessage, string calldata topic) public {
         require(newMessage.isEncrypted(), "Message must be encrypted");
-        
+
         emit NewMessage(msg.sender, topic, block.timestamp);
         messagesFromUsers[msg.sender][topic].push(newMessage);
     }
@@ -102,7 +102,7 @@ contract EncryptedMessageInbox {
     function setPublicKey(string calldata _publicKey) external onlyOwner {
         publicKey = _publicKey;
     }
-    
+
     /**
      * @notice Transfer ownership of the contract to a new address
      * @dev Only the current owner can call this function

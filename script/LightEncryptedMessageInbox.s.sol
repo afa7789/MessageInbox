@@ -15,7 +15,7 @@ import {EncryptedMessageInboxLight} from "../src/EncryptedMessageInboxLight.sol"
 
 contract LightEncryptedMessageInboxScript is Script {
     EncryptedMessageInboxLight public lightInbox;
-    
+
     // Default fallback public key
     string public constant DEFAULT_PUBLIC_KEY = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQENBGH...test key...";
 
@@ -31,7 +31,7 @@ contract LightEncryptedMessageInboxScript is Script {
         } catch {
             publicKey = DEFAULT_PUBLIC_KEY;
         }
-        
+
         // Deploy do contrato EncryptedMessageInboxLight com validação otimizada
         lightInbox = new EncryptedMessageInboxLight(publicKey);
 

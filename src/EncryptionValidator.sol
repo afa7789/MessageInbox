@@ -11,7 +11,7 @@ library EncryptionValidator {
     /// @notice Minimum length required for encrypted data
     /// @dev Based on typical encryption overhead (e.g., libsodium adds ~40 bytes)
     uint256 public constant MIN_ENCRYPTED_LENGTH = 40;
-    
+
     /// @notice Minimum entropy threshold for encryption validation
     /// @dev Percentage value used to determine if data appears encrypted
     uint256 public constant MIN_ENTROPY_THRESHOLD = 60; // Percentage
@@ -24,22 +24,22 @@ library EncryptionValidator {
      */
     function isEncrypted(string memory message) internal pure returns (bool isValid) {
         bytes memory data = bytes(message);
-        
+
         // 1. Check minimum length
         if (data.length < MIN_ENCRYPTED_LENGTH) {
             return false;
         }
-        
+
         // 2. Check if it contains only printable characters (possible plain text)
         if (isProbablyPlainText(data)) {
             return false;
         }
-        
+
         // 3. Check for high entropy
         if (!hasHighEntropy(data)) {
             return false;
         }
-        
+
         return true;
     }
 
@@ -50,24 +50,21 @@ library EncryptionValidator {
      * @return isValid Whether the message appears to be encrypted
      * @return reason Human-readable explanation of the validation result
      */
-    function testEncryption(string memory message) internal pure returns (
-        bool isValid,
-        string memory reason
-    ) {
+    function testEncryption(string memory message) internal pure returns (bool isValid, string memory reason) {
         bytes memory data = bytes(message);
-        
+
         if (data.length < MIN_ENCRYPTED_LENGTH) {
             return (false, "Message too short");
         }
-        
+
         if (isProbablyPlainText(data)) {
             return (false, "Looks like plain text");
         }
-        
+
         if (!hasHighEntropy(data)) {
             return (false, "Low entropy - doesn't look encrypted");
         }
-        
+
         return (true, "Looks encrypted");
     }
 
@@ -80,21 +77,23 @@ library EncryptionValidator {
     function isProbablyPlainText(bytes memory data) internal pure returns (bool) {
         uint256 printableCount = 0;
         uint256 spaceCount = 0;
-        
-        for (uint i = 0; i < data.length && i < 100; i++) { // Check only first 100 chars
+
+        for (uint256 i = 0; i < data.length && i < 100; i++) {
+            // Check only first 100 chars
             uint8 char = uint8(data[i]);
-            
+
             // Count printable ASCII characters
             if ((char >= 32 && char <= 126)) {
                 printableCount++;
-                if (char == 32) { // space
+                if (char == 32) {
+                    // space
                     spaceCount++;
                 }
             }
         }
-        
+
         uint256 sampleSize = data.length > 100 ? 100 : data.length;
-        
+
         // If >90% are printable characters AND there are spaces, probably text
         return (printableCount * 100 / sampleSize > 90) && (spaceCount > 0);
     }
@@ -107,22 +106,22 @@ library EncryptionValidator {
      */
     function hasHighEntropy(bytes memory data) internal pure returns (bool) {
         if (data.length == 0) return false;
-        
+
         uint256[256] memory frequency;
-        
+
         // Count frequency of each byte
-        for (uint i = 0; i < data.length; i++) {
+        for (uint256 i = 0; i < data.length; i++) {
             frequency[uint8(data[i])]++;
         }
-        
+
         // Count unique values
         uint256 uniqueValues = 0;
-        for (uint i = 0; i < 256; i++) {
+        for (uint256 i = 0; i < 256; i++) {
             if (frequency[i] > 0) {
                 uniqueValues++;
             }
         }
-        
+
         // Improved entropy calculation
         uint256 entropyPercentage;
         if (data.length <= 256) {
@@ -132,7 +131,7 @@ library EncryptionValidator {
             // For long data, expect most possible byte values to appear
             entropyPercentage = (uniqueValues * 100) / 256;
         }
-        
+
         return entropyPercentage >= MIN_ENTROPY_THRESHOLD;
     }
 }

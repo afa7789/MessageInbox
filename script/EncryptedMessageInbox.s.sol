@@ -15,7 +15,7 @@ import {EncryptedMessageInbox} from "../src/EncryptedMessageInbox.sol";
 
 contract EncryptedMessageInboxScript is Script {
     EncryptedMessageInbox public encryptedInbox;
-    
+
     // Default fallback public key
     string public constant DEFAULT_PUBLIC_KEY = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQENBGH...test key...";
 

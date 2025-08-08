@@ -9,7 +9,7 @@ pragma solidity ^0.8.13;
 contract MessageInbox {
     /// @notice Public key used for encrypting messages sent to this inbox
     string public publicKey;
-    
+
     /// @notice Address of the contract owner who can manage the public key
     address public owner;
 
@@ -18,7 +18,7 @@ contract MessageInbox {
 
     /// @notice Emitted when a new message is successfully stored
     event NewMessage(address indexed from, string topic, uint256 timestamp);
-    
+
     /**
      * @notice Constructor to initialize the contract with a public key
      * @param _publicKey The public key string to be used for message encryption
@@ -27,7 +27,7 @@ contract MessageInbox {
         publicKey = _publicKey;
         owner = msg.sender;
     }
-    
+
     /**
      * @dev Modifier to restrict function access to contract owner only
      */
@@ -69,7 +69,7 @@ contract MessageInbox {
     function setPublicKey(string calldata _publicKey) external onlyOwner {
         publicKey = _publicKey;
     }
-    
+
     /**
      * @notice Transfer ownership of the contract to a new address
      */
