@@ -39,7 +39,7 @@ contract DeployInboxScript is Script {
 
         // Get configuration from environment
         string memory contractType;
-        try vm.envString("CONTRACT_TYPE") returns (string memory _contractType) {
+        try vm.envString("ENCRYPT_PUBLIC_KEY") returns (string memory _contractType) {
             contractType = _contractType;
         } catch {
             contractType = "full";

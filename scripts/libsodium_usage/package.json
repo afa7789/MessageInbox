@@ -1,0 +1,22 @@
+{
+  "name": "libsodium_usage",
+  "version": "1.0.0",
+  "description": "Simple CLI for encryption/decryption using libsodium",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "main.js",
+  "scripts": {
+    "keygen": "node main.js keygen",
+    "encrypt": "node main.js encrypt",
+    "decrypt": "node main.js decrypt",
+    "help": "node main.js help",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "libsodium-wrappers": "^0.7.11",
+    "commander": "^11.1.0",
+    "fs-extra": "^11.1.1",
+    "chalk": "^4.1.2"
+  }
+}
