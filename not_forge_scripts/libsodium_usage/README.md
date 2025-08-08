@@ -19,6 +19,7 @@ npm run keygen
 
 # Generate keys in a custom directory
 npm run keygen -- --output ./my-keys
+node ./not_forge_scripts/libsodium_usage/main.js keygen
 ```
 
 This creates two files:
