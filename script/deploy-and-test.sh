@@ -92,7 +92,11 @@ run_tests() {
     
     echo "Running TestInbox.s.sol script..."
     
-    if forge script script/TestInbox.s.sol:TestInboxScript --ffi; then
+    if forge script script/TestInbox.s.sol:TestInboxScript \
+        --rpc-url "$RPC_URL" \
+        --private-key "$PRIVATE_KEY" \
+        --broadcast \
+        --ffi; then
         print_success "All tests completed successfully"
     else
         print_error "Tests failed"

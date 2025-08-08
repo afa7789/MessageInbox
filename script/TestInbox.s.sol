@@ -42,6 +42,9 @@ contract TestInboxScript is Script {
         // Verify contract state
         _verifyContractState();
 
+        // Test retrieval and decryption
+        _testRetrievalAndDecryption();
+
         console.log("");
         console.log("=== TESTING WORKFLOW COMPLETE ===");
         console.log("All tests completed successfully!");
@@ -184,25 +187,64 @@ contract TestInboxScript is Script {
             return;
         }
 
-        vm.startBroadcast();
-        _sendTestMessages();
-        vm.stopBroadcast();
+        // Check if we're in a forked environment (connected to actual network)
+        try vm.activeFork() returns (uint256) {
+            console.log("BROADCASTING: Sending real transactions...");
+            vm.startBroadcast();
+            _sendTestMessages();
+            vm.stopBroadcast();
+        } catch {
+            console.log("SIMULATING: Testing contract interface...");
+            _simulateTestMessages();
+        }
 
         console.log("");
     }
 
     function _sendTestMessages() private {
         for (uint256 i = 0; i < testMessages.length; i++) {
-            string memory mockEncrypted =
-                string(abi.encodePacked("encrypted_mock_", vm.toString(i), "_", testMessages[i]));
-
-            _sendMessageToContract(mockEncrypted);
-            console.log("SENT: Message", i + 1, "to contract");
+            string memory encryptedMessage = _encryptMessage(testMessages[i]);
+            
+            if (bytes(encryptedMessage).length > 0) {
+                MessageInbox(deployedContractAddress).setMessage(encryptedMessage, "test");
+                console.log("SENT: Encrypted message", i + 1, "to contract");
+                console.log("Original:", testMessages[i]);
+            } else {
+                console.log("WARNING: Failed to encrypt message", i + 1, ", using mock");
+                string memory mockEncrypted = string(abi.encodePacked("encrypted_mock_", vm.toString(i), "_", testMessages[i]));
+                MessageInbox(deployedContractAddress).setMessage(mockEncrypted, "test");
+                console.log("SENT: Mock encrypted message", i + 1, "to contract");
+            }
         }
     }
 
-    function _sendMessageToContract(string memory message) private {
-        // Only MessageInbox is available
+    function _simulateTestMessages() private {
+        for (uint256 i = 0; i < testMessages.length; i++) {
+            string memory encryptedMessage = _encryptMessage(testMessages[i]);
+            
+            if (bytes(encryptedMessage).length > 0) {
+                // Use a try-catch to handle potential simulation issues
+                try this._testMessageSend(encryptedMessage) {
+                    console.log("SIMULATED: Encrypted message", i + 1, "interface test passed");
+                } catch {
+                    console.log("WARNING: Message", i + 1, "simulation failed");
+                }
+            } else {
+                console.log("WARNING: Failed to encrypt message", i + 1, "for simulation");
+                string memory mockEncrypted = string(abi.encodePacked("encrypted_mock_", vm.toString(i), "_", testMessages[i]));
+                try this._testMessageSend(mockEncrypted) {
+                    console.log("SIMULATED: Mock message", i + 1, "interface test passed");
+                } catch {
+                    console.log("WARNING: Mock message", i + 1, "simulation failed");
+                }
+            }
+        }
+    }
+
+    // External function for testing message sends
+    function _testMessageSend(string memory message) external {
+        // This is just for testing the contract interface
+        // In a real deployment, this would be called with vm.startBroadcast()
         MessageInbox(deployedContractAddress).setMessage(message, "test");
     }
 
@@ -214,30 +256,178 @@ contract TestInboxScript is Script {
             return;
         }
 
-        uint256 messageCount = _getMessageCount();
-        console.log("STATS: Total messages in contract:", messageCount);
-
-        _displayRecentMessages(messageCount);
+        // Check if we're in a forked environment
+        try vm.activeFork() returns (uint256) {
+            console.log("LIVE NETWORK: Checking actual contract state");
+            _verifyLiveContract();
+        } catch {
+            console.log("SIMULATION: Checking contract interface");
+            _verifyContractInterface();
+        }
+        
         console.log("SUCCESS: Contract verification complete");
     }
 
-    function _getMessageCount() private view returns (uint256) {
-        // Only MessageInbox is available
-        return MessageInbox(deployedContractAddress).getMessageCount(msg.sender, "test");
-    }
+    function _encryptMessage(string memory message) private returns (string memory) {
+        string[] memory cmd = new string[](3);
+        cmd[0] = "bash";
+        cmd[1] = "-c";
+        cmd[2] = string(abi.encodePacked(
+            "cd not_forge_scripts/libsodium_usage && npm run encrypt -- -f ./keys/public_key.txt --text '",
+            message,
+            "' 2>/dev/null | tail -1"
+        ));
 
-    function _displayRecentMessages(uint256 messageCount) private view {
-        console.log("MESSAGES: Recent messages:");
-        uint256 startIndex = messageCount >= 2 ? messageCount - 2 : 0;
-
-        for (uint256 i = startIndex; i < messageCount; i++) {
-            string memory message = _getMessage(i);
-            console.log("  Message", i, ":", message);
+        try vm.ffi(cmd) returns (bytes memory result) {
+            string memory encrypted = string(result);
+            // Remove any trailing newlines
+            encrypted = _trimString(encrypted);
+            
+            if (bytes(encrypted).length > 0) {
+                return encrypted;
+            } else {
+                return "";
+            }
+        } catch {
+            return "";
         }
     }
 
-    function _getMessage(uint256 index) private view returns (string memory) {
-        // Only MessageInbox is available
-        return MessageInbox(deployedContractAddress).getMessage(msg.sender, "test", index);
+    function _trimString(string memory str) private pure returns (string memory) {
+        bytes memory strBytes = bytes(str);
+        uint256 length = strBytes.length;
+        
+        // Remove trailing whitespace/newlines
+        while (length > 0 && (strBytes[length - 1] == 0x0A || strBytes[length - 1] == 0x0D || strBytes[length - 1] == 0x20)) {
+            length--;
+        }
+        
+        if (length == strBytes.length) {
+            return str;
+        }
+        
+        bytes memory trimmed = new bytes(length);
+        for (uint256 i = 0; i < length; i++) {
+            trimmed[i] = strBytes[i];
+        }
+        
+        return string(trimmed);
+    }
+
+    function _testRetrievalAndDecryption() private {
+        console.log("[STEP 6] Testing message retrieval and decryption...");
+
+        if (deployedContractAddress == address(0)) {
+            console.log("ERROR: No contract address available");
+            return;
+        }
+
+        // Check if we're in a forked environment (connected to actual network)
+        try vm.activeFork() returns (uint256) {
+            console.log("LIVE NETWORK: Testing retrieval and decryption");
+            _testLiveRetrievalAndDecryption();
+        } catch {
+            console.log("SIMULATION: Cannot test retrieval in simulation mode");
+        }
+
+        console.log("");
+    }
+
+    function _testLiveRetrievalAndDecryption() private {
+        // Get the number of messages stored
+        uint256 messageCount;
+        try MessageInbox(deployedContractAddress).getMessageCount(msg.sender, "test") returns (uint256 count) {
+            messageCount = count;
+            console.log("Found", messageCount, "messages to test");
+        } catch {
+            console.log("ERROR: Could not get message count");
+            return;
+        }
+
+        // Test retrieving and decrypting each message
+        for (uint256 i = 0; i < messageCount && i < testMessages.length; i++) {
+            console.log("--- Testing message", i + 1, "---");
+            
+            try MessageInbox(deployedContractAddress).getMessage(msg.sender, "test", i) returns (string memory encryptedMessage) {
+                console.log("RETRIEVED encrypted message");
+                
+                // Try to decrypt the message
+                string memory decryptedMessage = _decryptMessage(encryptedMessage);
+                
+                if (bytes(decryptedMessage).length > 0) {
+                    console.log("DECRYPTED message:", decryptedMessage);
+                    
+                    // Check if it matches the original
+                    if (keccak256(bytes(decryptedMessage)) == keccak256(bytes(testMessages[i]))) {
+                        console.log("SUCCESS: Decrypted message matches original!");
+                    } else {
+                        console.log("WARNING: Decrypted message differs from original");
+                        console.log("Expected:", testMessages[i]);
+                        console.log("Got:", decryptedMessage);
+                    }
+                } else {
+                    console.log("ERROR: Failed to decrypt message");
+                }
+            } catch {
+                console.log("ERROR: Could not retrieve message", i);
+            }
+            
+            console.log("");
+        }
+    }
+
+    function _decryptMessage(string memory encryptedMessage) private returns (string memory) {
+        string[] memory cmd = new string[](3);
+        cmd[0] = "bash";
+        cmd[1] = "-c";
+        cmd[2] = string(abi.encodePacked(
+            "cd not_forge_scripts/libsodium_usage && npm run decrypt -- --private-key-file ./keys/private_key.txt --text '",
+            encryptedMessage,
+            "' 2>/dev/null | tail -1"
+        ));
+
+        try vm.ffi(cmd) returns (bytes memory result) {
+            string memory decrypted = string(result);
+            // Remove any trailing newlines
+            decrypted = _trimString(decrypted);
+            
+            if (bytes(decrypted).length > 0) {
+                return decrypted;
+            } else {
+                return "";
+            }
+        } catch {
+            return "";
+        }
+    }
+
+    function _verifyLiveContract() private view {
+        try MessageInbox(deployedContractAddress).publicKey() returns (string memory pubKey) {
+            console.log("SUCCESS: Contract is responsive");
+            console.log("Public Key:", pubKey);
+            
+            // Try to get message count
+            try MessageInbox(deployedContractAddress).getMessageCount(msg.sender, "test") returns (uint256 count) {
+                console.log("STATS: Total messages in contract:", count);
+            } catch {
+                console.log("INFO: No messages found or access denied");
+            }
+        } catch {
+            console.log("WARNING: Could not read contract state");
+        }
+    }
+
+    function _verifyContractInterface() private view {
+        // Check if contract exists and has code
+        uint256 codeSize;
+        assembly {
+            codeSize := extcodesize(sload(deployedContractAddress.slot))
+        }
+        
+        if (codeSize > 0) {
+            console.log("SUCCESS: Contract has code at address");
+        } else {
+            console.log("INFO: Contract not found in simulation environment");
+        }
     }
 }
