@@ -204,14 +204,15 @@ contract TestInboxScript is Script {
     function _sendTestMessages() private {
         for (uint256 i = 0; i < testMessages.length; i++) {
             string memory encryptedMessage = _encryptMessage(testMessages[i]);
-            
+
             if (bytes(encryptedMessage).length > 0) {
                 MessageInbox(deployedContractAddress).setMessage(encryptedMessage, "test");
                 console.log("SENT: Encrypted message", i + 1, "to contract");
                 console.log("Original:", testMessages[i]);
             } else {
                 console.log("WARNING: Failed to encrypt message", i + 1, ", using mock");
-                string memory mockEncrypted = string(abi.encodePacked("encrypted_mock_", vm.toString(i), "_", testMessages[i]));
+                string memory mockEncrypted =
+                    string(abi.encodePacked("encrypted_mock_", vm.toString(i), "_", testMessages[i]));
                 MessageInbox(deployedContractAddress).setMessage(mockEncrypted, "test");
                 console.log("SENT: Mock encrypted message", i + 1, "to contract");
             }
@@ -221,7 +222,7 @@ contract TestInboxScript is Script {
     function _simulateTestMessages() private {
         for (uint256 i = 0; i < testMessages.length; i++) {
             string memory encryptedMessage = _encryptMessage(testMessages[i]);
-            
+
             if (bytes(encryptedMessage).length > 0) {
                 // Use a try-catch to handle potential simulation issues
                 try this._testMessageSend(encryptedMessage) {
@@ -231,7 +232,8 @@ contract TestInboxScript is Script {
                 }
             } else {
                 console.log("WARNING: Failed to encrypt message", i + 1, "for simulation");
-                string memory mockEncrypted = string(abi.encodePacked("encrypted_mock_", vm.toString(i), "_", testMessages[i]));
+                string memory mockEncrypted =
+                    string(abi.encodePacked("encrypted_mock_", vm.toString(i), "_", testMessages[i]));
                 try this._testMessageSend(mockEncrypted) {
                     console.log("SIMULATED: Mock message", i + 1, "interface test passed");
                 } catch {
@@ -264,7 +266,7 @@ contract TestInboxScript is Script {
             console.log("SIMULATION: Checking contract interface");
             _verifyContractInterface();
         }
-        
+
         console.log("SUCCESS: Contract verification complete");
     }
 
@@ -272,17 +274,19 @@ contract TestInboxScript is Script {
         string[] memory cmd = new string[](3);
         cmd[0] = "bash";
         cmd[1] = "-c";
-        cmd[2] = string(abi.encodePacked(
-            "cd not_forge_scripts/libsodium_usage && npm run encrypt -- -f ./keys/public_key.txt --text '",
-            message,
-            "' 2>/dev/null | tail -1"
-        ));
+        cmd[2] = string(
+            abi.encodePacked(
+                "cd not_forge_scripts/libsodium_usage && npm run encrypt -- -f ./keys/public_key.txt --text '",
+                message,
+                "' 2>/dev/null | tail -1"
+            )
+        );
 
         try vm.ffi(cmd) returns (bytes memory result) {
             string memory encrypted = string(result);
             // Remove any trailing newlines
             encrypted = _trimString(encrypted);
-            
+
             if (bytes(encrypted).length > 0) {
                 return encrypted;
             } else {
@@ -296,21 +300,23 @@ contract TestInboxScript is Script {
     function _trimString(string memory str) private pure returns (string memory) {
         bytes memory strBytes = bytes(str);
         uint256 length = strBytes.length;
-        
+
         // Remove trailing whitespace/newlines
-        while (length > 0 && (strBytes[length - 1] == 0x0A || strBytes[length - 1] == 0x0D || strBytes[length - 1] == 0x20)) {
+        while (
+            length > 0 && (strBytes[length - 1] == 0x0A || strBytes[length - 1] == 0x0D || strBytes[length - 1] == 0x20)
+        ) {
             length--;
         }
-        
+
         if (length == strBytes.length) {
             return str;
         }
-        
+
         bytes memory trimmed = new bytes(length);
         for (uint256 i = 0; i < length; i++) {
             trimmed[i] = strBytes[i];
         }
-        
+
         return string(trimmed);
     }
 
@@ -347,16 +353,18 @@ contract TestInboxScript is Script {
         // Test retrieving and decrypting each message
         for (uint256 i = 0; i < messageCount && i < testMessages.length; i++) {
             console.log("--- Testing message", i + 1, "---");
-            
-            try MessageInbox(deployedContractAddress).getMessage(msg.sender, "test", i) returns (string memory encryptedMessage) {
+
+            try MessageInbox(deployedContractAddress).getMessage(msg.sender, "test", i) returns (
+                string memory encryptedMessage
+            ) {
                 console.log("RETRIEVED encrypted message");
-                
+
                 // Try to decrypt the message
                 string memory decryptedMessage = _decryptMessage(encryptedMessage);
-                
+
                 if (bytes(decryptedMessage).length > 0) {
                     console.log("DECRYPTED message:", decryptedMessage);
-                    
+
                     // Check if it matches the original
                     if (keccak256(bytes(decryptedMessage)) == keccak256(bytes(testMessages[i]))) {
                         console.log("SUCCESS: Decrypted message matches original!");
@@ -371,7 +379,7 @@ contract TestInboxScript is Script {
             } catch {
                 console.log("ERROR: Could not retrieve message", i);
             }
-            
+
             console.log("");
         }
     }
@@ -380,17 +388,19 @@ contract TestInboxScript is Script {
         string[] memory cmd = new string[](3);
         cmd[0] = "bash";
         cmd[1] = "-c";
-        cmd[2] = string(abi.encodePacked(
-            "cd not_forge_scripts/libsodium_usage && npm run decrypt -- --private-key-file ./keys/private_key.txt --text '",
-            encryptedMessage,
-            "' 2>/dev/null | tail -1"
-        ));
+        cmd[2] = string(
+            abi.encodePacked(
+                "cd not_forge_scripts/libsodium_usage && npm run decrypt -- --private-key-file ./keys/private_key.txt --text '",
+                encryptedMessage,
+                "' 2>/dev/null | tail -1"
+            )
+        );
 
         try vm.ffi(cmd) returns (bytes memory result) {
             string memory decrypted = string(result);
             // Remove any trailing newlines
             decrypted = _trimString(decrypted);
-            
+
             if (bytes(decrypted).length > 0) {
                 return decrypted;
             } else {
@@ -405,7 +415,7 @@ contract TestInboxScript is Script {
         try MessageInbox(deployedContractAddress).publicKey() returns (string memory pubKey) {
             console.log("SUCCESS: Contract is responsive");
             console.log("Public Key:", pubKey);
-            
+
             // Try to get message count
             try MessageInbox(deployedContractAddress).getMessageCount(msg.sender, "test") returns (uint256 count) {
                 console.log("STATS: Total messages in contract:", count);
@@ -423,7 +433,7 @@ contract TestInboxScript is Script {
         assembly {
             codeSize := extcodesize(sload(deployedContractAddress.slot))
         }
-        
+
         if (codeSize > 0) {
             console.log("SUCCESS: Contract has code at address");
         } else {

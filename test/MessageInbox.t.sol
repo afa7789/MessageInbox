@@ -403,9 +403,9 @@ contract MessageInboxBasicTest is Test {
     function testFuzz_MessageStorage(uint256 seed, uint16 messageLength, uint8 topicLength, uint8 userIndex) public {
         // Use bound to ensure reasonable inputs and prevent overflow
         messageLength = uint16(bound(messageLength, 0, 1000)); // Reduced from 2000 to 1000
-        topicLength = uint8(bound(topicLength, 0, 50));        // Reduced from 100 to 50
-        userIndex = uint8(bound(userIndex, 0, 2));             // 0=alice, 1=bob, 2=charlie
-        
+        topicLength = uint8(bound(topicLength, 0, 50)); // Reduced from 100 to 50
+        userIndex = uint8(bound(userIndex, 0, 2)); // 0=alice, 1=bob, 2=charlie
+
         // Bound the seed to prevent extremely large values
         seed = bound(seed, 0, type(uint128).max);
 
@@ -529,7 +529,7 @@ contract MessageInboxBasicTest is Test {
      */
     function _generateDeterministicString(uint256 seed, uint256 length) internal pure returns (string memory) {
         if (length == 0) return "";
-        
+
         // Prevent overflow by limiting length to reasonable bounds
         if (length > 10000) length = 10000;
 
