@@ -39,19 +39,19 @@ contract DeployInboxScript is Script {
 
         // Get configuration from environment
         string memory contractType;
-        try vm.envString("ENCRYPT_PUBLIC_KEY") returns (string memory _contractType) {
+        try vm.envString("CONTRACT_TYPE") returns (string memory _contractType) {
             contractType = _contractType;
         } catch {
             contractType = "full";
         }
 
         string memory publicKey;
-        try vm.envString("PGP_PUBLIC_KEY") returns (string memory _publicKey) {
+        try vm.envString("ENCRYPT_PUBLIC_KEY") returns (string memory _publicKey) {
             publicKey = _publicKey;
             console.log("Using PGP public key from environment variable");
         } catch {
             publicKey = FALLBACK_PUBLIC_KEY;
-            console.log("WARNING: Using fallback test key. Set PGP_PUBLIC_KEY environment variable for production!");
+            console.log("WARNING: Using fallback test key. Set ENCRYPT_PUBLIC_KEY environment variable for production!");
         }
 
         console.log("=== INBOX DEPLOYMENT ===");
